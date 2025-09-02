@@ -1,0 +1,41 @@
+.payments-container {
+  display: flex;
+  justify-content: center;
+  padding: 40px;
+}
+
+.payments-card {
+  background: white;
+  padding: 30px;
+  border-radius: 16px;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0px 6px 18px rgba(0,0,0,0.1);
+}
+
+.payments-title {
+  font-size: 28px;
+  color: #4caf50;
+  margin-bottom: 10px;
+}
+
+.payments-subtitle {
+  font-size: 16px;
+  color: #555;
+  margin-bottom: 20px;
+}
+
+.donation-amount {
+  font-size: 20px;
+  margin: 15px 0;
+  color: #333;
+}
+
+.qr-box {
+  margin: 20px 0;
+}
+
+.scan-text {
+  font-size: 14px;
+  color: #777;
+}
