@@ -1,58 +1,89 @@
 import express from "express";
 import Razorpay from "razorpay";
 import dotenv from "dotenv";
-import bodyParser from "body-parser";
 import crypto from "crypto";
-import authRouters from './routes/auth.js';
+import bodyParser from "body-parser";
 import cors from "cors";
+import authRouters from './routes/auth.js';
 
 dotenv.config();
 const app = express();
-app.use(bodyParser.json());
-app.use(cors())
 
-// ✅ Razorpay instance
+app.use(cors());
+app.use(bodyParser.json());
+
+// 🔑 Razorpay instance
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// ✅ Create UPI Order
-app.post("/create-order", async (req, res) => {
+// Temporary in-memory DB
+const payments = {};
+
+// ✅ Create Order
+app.post("/api/create-order", async (req, res) => {
   try {
+    const { amount } = req.body;
+
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
     const options = {
-      amount: req.body.amount * 100, // INR -> paise
+      amount: parseInt(amount) * 100, // INR -> paise
       currency: "INR",
-      receipt: "receipt#1",
+      receipt: "receipt_" + Date.now(),
       payment_capture: 1,
     };
 
     const order = await razorpay.orders.create(options);
-    res.json({ orderId: order.id, amount: order.amount, currency: order.currency });
+    payments[order.id] = { status: "pending" };
+
+    res.json(order);
   } catch (error) {
-    console.error(error);
+    console.error("Order error:", error);
     res.status(500).json({ error: "Failed to create order" });
   }
 });
 
-// ✅ Verify Payment (Webhook endpoint)
-app.post("/payment-verification", (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+// ✅ Razorpay Webhook
+app.post(
+  "/api/payment/webhook",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-  const generated_signature = crypto
-    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-    .update(razorpay_order_id + "|" + razorpay_payment_id)
-    .digest("hex");
+    const shasum = crypto.createHmac("sha256", secret);
+    shasum.update(req.body); // raw body, not parsed JSON
+    const digest = shasum.digest("hex");
 
-  if (generated_signature === razorpay_signature) {
-    // Payment is verified ✅
-    console.log("Payment Success:", razorpay_payment_id);
-    return res.json({ status: "success", paymentId: razorpay_payment_id });
-  } else {
-    return res.status(400).json({ status: "failure" });
+    if (digest === req.headers["x-razorpay-signature"]) {
+      const payment = JSON.parse(req.body).payload.payment.entity;
+      console.log("✅ Webhook payment:", payment);
+
+      payments[payment.order_id] = {
+        status: payment.status,
+        paymentId: payment.id,
+      };
+
+      return res.json({ status: "ok" });
+    } else {
+      console.log("❌ Invalid webhook signature");
+      return res.status(400).send("Invalid signature");
+    }
   }
+);
+
+// ✅ Status Check API (frontend polls here)
+app.get("/api/payment-status/:orderId", (req, res) => {
+  const { orderId } = req.params;
+  const payment = payments[orderId] || { status: "pending" };
+  res.json(payment);
 });
 
 app.use('/api/auth', authRouters);
 
-app.listen(5000, () => console.log("Server running on http://localhost:5000"));
+app.listen(5000, () =>
+  console.log("🚀 Server running at http://localhost:5000")
+);

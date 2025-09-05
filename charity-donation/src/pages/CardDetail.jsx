@@ -9,6 +9,7 @@ const CardDetail = () => {
 
   const [showDonate, setShowDonate] = useState(false);
   const [amount, setAmount] = useState("");
+  const [paymentDone, setPaymentDone] = useState(false);
 
   const handleDonateClick = () => {
     setShowDonate(true);
@@ -20,46 +21,30 @@ const CardDetail = () => {
     }
 
     try {
-      // 1. Create order from backend
+      // 1️⃣ Create order
       const res = await fetch("http://localhost:5000/api/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount }),
       });
-      const data = await res.json();
+      const order = await res.json();
 
-      if (!data.orderId) {
-        return alert("Failed to create order. Try again.");
+      if (!order.id) {
+        return alert("Failed to create order");
       }
 
-      // 2. Open Razorpay popup
+      // 2️⃣ Razorpay popup
       const options = {
-        key: process.env.REACT_APP_RAZORPAY_KEY_ID, // put your key in frontend .env
-        amount: data.amount,
-        currency: data.currency,
-        name: "Charity Donation",
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: order.amount,
+        currency: order.currency,
+        name: "Charity Fund",
         description: detail.title,
-        order_id: data.orderId,
-        handler: async function (response) {
-          // 3. Verify payment
-          const verifyRes = await fetch("http://localhost:5000/api/payment-verification", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(response),
-          });
-          const verifyData = await verifyRes.json();
-
-          if (verifyData.success) {
-            alert("🎉 Payment Successful! Thank you for donating.");
-          } else {
-            alert("❌ Payment verification failed.");
-          }
+        order_id: order.id,
+        handler: function () {
+          pollPaymentStatus(order.id);
         },
-        prefill: {
-          name: "Charity Supporter",
-          email: "donor@example.com",
-          contact: "9999999999",
-        },
+        prefill: { name: "Donor", email: "donor@example.com" },
         theme: { color: "#3399cc" },
       };
 
@@ -71,13 +56,33 @@ const CardDetail = () => {
     }
   };
 
+  // 3️⃣ Poll backend until status = captured
+  const pollPaymentStatus = (orderId) => {
+    const interval = setInterval(async () => {
+      const res = await fetch(
+        `http://localhost:5000/api/payment-status/${orderId}`
+      );
+      const data = await res.json();
+      if (data.status === "captured") {
+        clearInterval(interval);
+        setPaymentDone(true);
+      }
+    }, 3000);
+  };
+
   if (!detail) {
-    return <h2 style={{ textAlign: "center", marginTop: "100px" }}>No Data Found</h2>;
+    return (
+      <h2 style={{ textAlign: "center", marginTop: "100px" }}>
+        No Data Found
+      </h2>
+    );
   }
 
   return (
     <div className="detail-container">
-      <button className="back-btn" onClick={() => window.history.back()}>⬅ Back</button>
+      <button className="back-btn" onClick={() => window.history.back()}>
+        ⬅ Back
+      </button>
 
       <div className="detail-card">
         <img src={detail.image} alt={detail.title} className="detail-img" />
@@ -92,7 +97,7 @@ const CardDetail = () => {
           Donate Fund
         </button>
 
-        {showDonate && (
+        {showDonate && !paymentDone && (
           <div className="donate-section">
             <input
               type="number"
@@ -104,6 +109,12 @@ const CardDetail = () => {
             <button className="generate-btn" onClick={handleRazorpayPayment}>
               Pay with UPI
             </button>
+          </div>
+        )}
+
+        {paymentDone && (
+          <div className="success-animation">
+             Payment Successful! Thank you 
           </div>
         )}
       </div>
